@@ -141,7 +141,7 @@ void EntryWidget::updateColorButton() {
 
 void EntryWidget::onExpressionEdited() {
     QString text = expressionEdit_->text();
-    if (text.toStdString() != entry_.expression) {
+    if (std::string(text.toUtf8().constData()) != entry_.expression) {
         emit expressionChanged(index_, text);
     }
 }

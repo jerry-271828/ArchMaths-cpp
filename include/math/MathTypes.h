@@ -6,6 +6,7 @@
 #include <functional>
 #include <unordered_map>
 #include <cmath>
+#include <memory>
 
 namespace ArchMaths {
 
