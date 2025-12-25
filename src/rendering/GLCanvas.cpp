@@ -183,7 +183,7 @@ in vec3 vPos;
 out vec4 FragColor;
 void main() {
     vec3 norm = normalize(vNormal);
-    float diff = max(dot(norm, normalize(lightDir)), 0.0);
+    float diff = abs(dot(norm, normalize(lightDir)));
     float ambient = 0.3;
     float lighting = ambient + (1.0 - ambient) * diff;
     FragColor = vec4(color.rgb * lighting, color.a);
@@ -217,7 +217,7 @@ varying vec3 vNormal;
 varying vec3 vPos;
 void main() {
     vec3 norm = normalize(vNormal);
-    float diff = max(dot(norm, normalize(lightDir)), 0.0);
+    float diff = abs(dot(norm, normalize(lightDir)));
     float ambient = 0.3;
     float lighting = ambient + (1.0 - ambient) * diff;
     gl_FragColor = vec4(color.rgb * lighting, color.a);
