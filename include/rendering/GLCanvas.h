@@ -39,10 +39,14 @@ public:
     // 3D mode
     void set3DMode(bool enabled);
     bool is3DMode() const { return is3DMode_; }
+    void set3DPanMode(bool pan);
+    bool is3DPanMode() const { return is3DPanMode_; }
+    QVector3D getCameraTarget() const { return cameraTarget_; }
 
 signals:
     void viewChanged(QPointF offset, double scale);
     void mousePositionChanged(QPointF mathPos);
+    void view3DChanged();
 
 protected:
     void initializeGL() override;
@@ -68,10 +72,12 @@ private:
     void initShaders3D();
     void updateCamera();
     void draw3DAxes();
+    void draw3DAxisLabels();
     void drawSurface3D(const PlotEntry& entry);
     void drawParametric3D(const PlotEntry& entry);
 
     std::unique_ptr<QOpenGLShaderProgram> lineShader_;
+    std::unique_ptr<QOpenGLShaderProgram> line3DShader_;
     std::unique_ptr<QOpenGLShaderProgram> implicitShader_;
     std::unique_ptr<QOpenGLShaderProgram> surface3DShader_;
     QOpenGLBuffer quadVBO_;
@@ -99,6 +105,7 @@ private:
 
     // 3D state
     bool is3DMode_ = false;
+    bool is3DPanMode_ = false;
     QMatrix4x4 viewMatrix_;
     QMatrix4x4 modelMatrix_;
     float cameraDistance_ = 8.0f;

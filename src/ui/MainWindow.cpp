@@ -181,6 +181,12 @@ void MainWindow::setupToolBar() {
         canvas_->set3DMode(checked);
         recalculateAll();
     });
+
+    QAction* panModeAction = toolbar->addAction("Pan");
+    panModeAction->setCheckable(true);
+    panModeAction->setEnabled(false);
+    connect(panModeAction, &QAction::toggled, canvas_, &GLCanvas::set3DPanMode);
+    connect(toggle3DAction, &QAction::toggled, panModeAction, &QAction::setEnabled);
 }
 
 void MainWindow::connectSignals() {
@@ -207,6 +213,9 @@ void MainWindow::connectSignals() {
 
     connect(canvas_, &GLCanvas::viewChanged,
             this, &MainWindow::onViewChanged);
+
+    connect(canvas_, &GLCanvas::view3DChanged,
+            this, &MainWindow::recalculateAll);
 
     connect(canvas_, &GLCanvas::mousePositionChanged,
             this, [this](QPointF pos) {
@@ -712,14 +721,15 @@ void MainWindow::calculatePlotData3D(PlotEntry& entry) {
     if (entry.plotType == PlotType::Surface3D) {
         qDebug() << "calculatePlotData3D: Surface3D";
         // z = f(x,y) surface
+        QVector3D center = canvas_->getCameraTarget();
         double range = 5.0;
         int resolution = static_cast<int>(50 * precisionMultiplier_);
 
         std::vector<double> xVals, yVals;
         double step = 2.0 * range / resolution;
         for (int i = 0; i <= resolution; ++i) {
-            xVals.push_back(-range + i * step);
-            yVals.push_back(-range + i * step);
+            xVals.push_back(center.x() - range + i * step);
+            yVals.push_back(center.y() - range + i * step);
         }
 
         std::vector<std::vector<double>> zGrid;
@@ -730,6 +740,7 @@ void MainWindow::calculatePlotData3D(PlotEntry& entry) {
     else if (entry.plotType == PlotType::Implicit3D) {
         qDebug() << "calculatePlotData3D: Implicit3D";
         // f(x,y,z) = 0 implicit surface
+        QVector3D center = canvas_->getCameraTarget();
         double range = 3.0;
         int resolution = static_cast<int>(30 * precisionMultiplier_);
         qDebug() << "calculatePlotData3D: resolution =" << resolution;
@@ -737,9 +748,9 @@ void MainWindow::calculatePlotData3D(PlotEntry& entry) {
         std::vector<double> xVals, yVals, zVals;
         double step = 2.0 * range / resolution;
         for (int i = 0; i <= resolution; ++i) {
-            xVals.push_back(-range + i * step);
-            yVals.push_back(-range + i * step);
-            zVals.push_back(-range + i * step);
+            xVals.push_back(center.x() - range + i * step);
+            yVals.push_back(center.y() - range + i * step);
+            zVals.push_back(center.z() - range + i * step);
         }
         qDebug() << "calculatePlotData3D: created value arrays";
 
@@ -749,7 +760,9 @@ void MainWindow::calculatePlotData3D(PlotEntry& entry) {
         qDebug() << "calculatePlotData3D: evaluateVolume done, field size =" << field.size();
 
         generateImplicit3DMesh(entry, field, resolution + 1, resolution + 1, resolution + 1,
-                               -range, range, -range, range, -range, range);
+                               center.x() - range, center.x() + range,
+                               center.y() - range, center.y() + range,
+                               center.z() - range, center.z() + range);
         qDebug() << "calculatePlotData3D: generateImplicit3DMesh done, vertices3D size:" << entry.vertices3D.size();
     }
     else if (entry.plotType == PlotType::Parametric3D) {

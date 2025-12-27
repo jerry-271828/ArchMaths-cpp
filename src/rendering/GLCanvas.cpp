@@ -230,6 +230,51 @@ void main() {
     surface3DShader_->bindAttributeLocation("aPos", 0);
     surface3DShader_->bindAttributeLocation("aNormal", 1);
     surface3DShader_->link();
+
+    // 3D line shader
+    line3DShader_ = std::make_unique<QOpenGLShaderProgram>();
+#ifdef WASM_BUILD
+    const char* lineVertSrc = R"(#version 300 es
+precision mediump float;
+in vec3 aPos;
+uniform mat4 projection;
+void main() {
+    gl_Position = projection * vec4(aPos, 1.0);
+}
+)";
+    const char* lineFragSrc = R"(#version 300 es
+precision mediump float;
+uniform vec4 color;
+out vec4 FragColor;
+void main() {
+    FragColor = color;
+}
+)";
+#else
+    const char* lineVertSrc = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+attribute vec3 aPos;
+uniform mat4 projection;
+void main() {
+    gl_Position = projection * vec4(aPos, 1.0);
+}
+)";
+    const char* lineFragSrc = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+uniform vec4 color;
+void main() {
+    gl_FragColor = color;
+}
+)";
+#endif
+    line3DShader_->addShaderFromSourceCode(QOpenGLShader::Vertex, lineVertSrc);
+    line3DShader_->addShaderFromSourceCode(QOpenGLShader::Fragment, lineFragSrc);
+    line3DShader_->bindAttributeLocation("aPos", 0);
+    line3DShader_->link();
 }
 
 void GLCanvas::resizeGL(int w, int h) {
@@ -261,6 +306,8 @@ void GLCanvas::paintGL() {
 
         vao_.release();
         glDisable(GL_DEPTH_TEST);
+
+        draw3DAxisLabels();
     } else {
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -490,8 +537,17 @@ void GLCanvas::mouseMoveEvent(QMouseEvent* event) {
     if (is3DMode_) {
         if (isDragging_) {
             QPointF delta = event->pos() - lastMousePos_;
-            cameraYaw_ += static_cast<float>(delta.x()) * 0.5f;
-            cameraPitch_ = std::clamp(cameraPitch_ - static_cast<float>(delta.y()) * 0.5f, -89.0f, 89.0f);
+            if (is3DPanMode_) {
+                float yawRad = static_cast<float>(cameraYaw_ * M_PI / 180.0);
+                QVector3D right(std::cos(yawRad), 0, -std::sin(yawRad));
+                QVector3D up(0, 1, 0);
+                float panSpeed = cameraDistance_ * 0.005f;
+                cameraTarget_ -= right * static_cast<float>(delta.x()) * panSpeed;
+                cameraTarget_ += up * static_cast<float>(delta.y()) * panSpeed;
+            } else {
+                cameraYaw_ += static_cast<float>(delta.x()) * 0.5f;
+                cameraPitch_ = std::clamp(cameraPitch_ - static_cast<float>(delta.y()) * 0.5f, -89.0f, 89.0f);
+            }
             lastMousePos_ = event->pos();
             updateCamera();
             update();
@@ -512,6 +568,9 @@ void GLCanvas::mouseMoveEvent(QMouseEvent* event) {
 
 void GLCanvas::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
+        if (is3DMode_ && is3DPanMode_ && isDragging_) {
+            emit view3DChanged();
+        }
         isDragging_ = false;
         setCursor(Qt::ArrowCursor);
     }
@@ -757,6 +816,10 @@ void GLCanvas::set3DMode(bool enabled) {
     update();
 }
 
+void GLCanvas::set3DPanMode(bool pan) {
+    is3DPanMode_ = pan;
+}
+
 void GLCanvas::updateCamera() {
     float yawRad = static_cast<float>(cameraYaw_ * M_PI / 180.0);
     float pitchRad = static_cast<float>(cameraPitch_ * M_PI / 180.0);
@@ -774,48 +837,148 @@ void GLCanvas::updateCamera() {
 }
 
 void GLCanvas::draw3DAxes() {
-    // Set up 3D projection
     QMatrix4x4 projection;
     float aspect = static_cast<float>(width()) / static_cast<float>(height());
     projection.perspective(45.0f, aspect, 0.1f, 100.0f);
-
     QMatrix4x4 mvp = projection * viewMatrix_ * modelMatrix_;
 
-    lineShader_->bind();
-    lineShader_->setUniformValue("projection", mvp);
+    line3DShader_->bind();
+    line3DShader_->setUniformValue("projection", mvp);
 
-    // Draw 3D axes
-    std::vector<float> axisVertices = {
-        // X axis (red)
-        -5, 0, 0,  5, 0, 0,
-        // Y axis (green)
-        0, -5, 0,  0, 5, 0,
-        // Z axis (blue)
-        0, 0, -5,  0, 0, 5
+    const float baseLen = 5.0f;
+    const float tickSize = 0.1f;
+    const float arrowLen = 0.3f;
+    const float arrowWidth = 0.1f;
+
+    // Dynamic axis range based on cameraTarget_
+    int xMin = static_cast<int>(std::floor(cameraTarget_.x() - baseLen));
+    int xMax = static_cast<int>(std::ceil(cameraTarget_.x() + baseLen));
+    int yMin = static_cast<int>(std::floor(cameraTarget_.y() - baseLen));
+    int yMax = static_cast<int>(std::ceil(cameraTarget_.y() + baseLen));
+    int zMin = static_cast<int>(std::floor(cameraTarget_.z() - baseLen));
+    int zMax = static_cast<int>(std::ceil(cameraTarget_.z() + baseLen));
+
+    std::vector<float> vertices;
+    auto addLine = [&](float x1, float y1, float z1, float x2, float y2, float z2) {
+        vertices.insert(vertices.end(), {x1, y1, z1, x2, y2, z2});
     };
 
-    axesVBO_.bind();
-    axesVBO_.allocate(axisVertices.data(), static_cast<int>(axisVertices.size() * sizeof(float)));
+    // X axis line + ticks + arrow
+    addLine(static_cast<float>(xMin), 0, 0, static_cast<float>(xMax), 0, 0);
+    for (int i = xMin + 1; i < xMax; ++i) {
+        if (i == 0) continue;
+        addLine(i, -tickSize, 0, i, tickSize, 0);
+        addLine(i, 0, -tickSize, i, 0, tickSize);
+    }
+    addLine(static_cast<float>(xMax), 0, 0, xMax - arrowLen, arrowWidth, 0);
+    addLine(static_cast<float>(xMax), 0, 0, xMax - arrowLen, -arrowWidth, 0);
+    addLine(static_cast<float>(xMax), 0, 0, xMax - arrowLen, 0, arrowWidth);
+    addLine(static_cast<float>(xMax), 0, 0, xMax - arrowLen, 0, -arrowWidth);
+    int xCount = static_cast<int>(vertices.size() / 3);
 
+    // Y axis line + ticks + arrow
+    addLine(0, static_cast<float>(yMin), 0, 0, static_cast<float>(yMax), 0);
+    for (int i = yMin + 1; i < yMax; ++i) {
+        if (i == 0) continue;
+        addLine(-tickSize, i, 0, tickSize, i, 0);
+        addLine(0, i, -tickSize, 0, i, tickSize);
+    }
+    addLine(0, static_cast<float>(yMax), 0, arrowWidth, yMax - arrowLen, 0);
+    addLine(0, static_cast<float>(yMax), 0, -arrowWidth, yMax - arrowLen, 0);
+    addLine(0, static_cast<float>(yMax), 0, 0, yMax - arrowLen, arrowWidth);
+    addLine(0, static_cast<float>(yMax), 0, 0, yMax - arrowLen, -arrowWidth);
+    int yCount = static_cast<int>(vertices.size() / 3) - xCount;
+
+    // Z axis line + ticks + arrow
+    addLine(0, 0, static_cast<float>(zMin), 0, 0, static_cast<float>(zMax));
+    for (int i = zMin + 1; i < zMax; ++i) {
+        if (i == 0) continue;
+        addLine(-tickSize, 0, i, tickSize, 0, i);
+        addLine(0, -tickSize, i, 0, tickSize, i);
+    }
+    addLine(0, 0, static_cast<float>(zMax), arrowWidth, 0, zMax - arrowLen);
+    addLine(0, 0, static_cast<float>(zMax), -arrowWidth, 0, zMax - arrowLen);
+    addLine(0, 0, static_cast<float>(zMax), 0, arrowWidth, zMax - arrowLen);
+    addLine(0, 0, static_cast<float>(zMax), 0, -arrowWidth, zMax - arrowLen);
+    int zCount = static_cast<int>(vertices.size() / 3) - xCount - yCount;
+
+    axesVBO_.bind();
+    axesVBO_.allocate(vertices.data(), static_cast<int>(vertices.size() * sizeof(float)));
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-
     glLineWidth(2.0f);
 
-    // X axis - red
-    lineShader_->setUniformValue("color", QVector4D(0.8f, 0.2f, 0.2f, 1.0f));
-    glDrawArrays(GL_LINES, 0, 2);
+    line3DShader_->setUniformValue("color", QVector4D(0.8f, 0.2f, 0.2f, 1.0f));
+    glDrawArrays(GL_LINES, 0, xCount);
 
-    // Y axis - green
-    lineShader_->setUniformValue("color", QVector4D(0.2f, 0.8f, 0.2f, 1.0f));
-    glDrawArrays(GL_LINES, 2, 2);
+    line3DShader_->setUniformValue("color", QVector4D(0.2f, 0.8f, 0.2f, 1.0f));
+    glDrawArrays(GL_LINES, xCount, yCount);
 
-    // Z axis - blue
-    lineShader_->setUniformValue("color", QVector4D(0.2f, 0.2f, 0.8f, 1.0f));
-    glDrawArrays(GL_LINES, 4, 2);
+    line3DShader_->setUniformValue("color", QVector4D(0.2f, 0.2f, 0.8f, 1.0f));
+    glDrawArrays(GL_LINES, xCount + yCount, zCount);
 
     axesVBO_.release();
-    lineShader_->release();
+    line3DShader_->release();
+}
+
+void GLCanvas::draw3DAxisLabels() {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setFont(QFont("Sans", 9));
+
+    QMatrix4x4 projection;
+    float aspect = static_cast<float>(width()) / static_cast<float>(height());
+    projection.perspective(45.0f, aspect, 0.1f, 100.0f);
+    QMatrix4x4 mvp = projection * viewMatrix_ * modelMatrix_;
+
+    auto project = [&](float x, float y, float z) -> QPointF {
+        QVector4D p = mvp * QVector4D(x, y, z, 1.0f);
+        if (p.w() == 0) return QPointF(-1000, -1000);
+        float nx = p.x() / p.w();
+        float ny = p.y() / p.w();
+        return QPointF((nx + 1.0f) * 0.5f * width(), (1.0f - ny) * 0.5f * height());
+    };
+
+    // Dynamic axis range based on cameraTarget_
+    const float baseLen = 5.0f;
+    int xMin = static_cast<int>(std::floor(cameraTarget_.x() - baseLen));
+    int xMax = static_cast<int>(std::ceil(cameraTarget_.x() + baseLen));
+    int yMin = static_cast<int>(std::floor(cameraTarget_.y() - baseLen));
+    int yMax = static_cast<int>(std::ceil(cameraTarget_.y() + baseLen));
+    int zMin = static_cast<int>(std::floor(cameraTarget_.z() - baseLen));
+    int zMax = static_cast<int>(std::ceil(cameraTarget_.z() + baseLen));
+
+    // X axis labels (red)
+    painter.setPen(QColor(200, 50, 50));
+    for (int i = xMin + 1; i < xMax; ++i) {
+        if (i == 0) continue;
+        QPointF pos = project(i, -0.3f, 0);
+        painter.drawText(QRectF(pos.x() - 15, pos.y() - 8, 30, 16), Qt::AlignCenter, QString::number(i));
+    }
+    QPointF xLabel = project(xMax + 0.3f, 0, 0);
+    painter.drawText(QRectF(xLabel.x() - 10, xLabel.y() - 8, 20, 16), Qt::AlignCenter, "x");
+
+    // Y axis labels (green)
+    painter.setPen(QColor(50, 200, 50));
+    for (int i = yMin + 1; i < yMax; ++i) {
+        if (i == 0) continue;
+        QPointF pos = project(-0.3f, i, 0);
+        painter.drawText(QRectF(pos.x() - 15, pos.y() - 8, 30, 16), Qt::AlignCenter, QString::number(i));
+    }
+    QPointF yLabel = project(0, yMax + 0.3f, 0);
+    painter.drawText(QRectF(yLabel.x() - 10, yLabel.y() - 8, 20, 16), Qt::AlignCenter, "y");
+
+    // Z axis labels (blue)
+    painter.setPen(QColor(50, 50, 200));
+    for (int i = zMin + 1; i < zMax; ++i) {
+        if (i == 0) continue;
+        QPointF pos = project(0, -0.3f, i);
+        painter.drawText(QRectF(pos.x() - 15, pos.y() - 8, 30, 16), Qt::AlignCenter, QString::number(i));
+    }
+    QPointF zLabel = project(0, 0, zMax + 0.3f);
+    painter.drawText(QRectF(zLabel.x() - 10, zLabel.y() - 8, 20, 16), Qt::AlignCenter, "z");
+
+    painter.end();
 }
 
 void GLCanvas::drawSurface3D(const PlotEntry& entry) {
