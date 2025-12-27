@@ -820,6 +820,12 @@ void GLCanvas::set3DPanMode(bool pan) {
     is3DPanMode_ = pan;
 }
 
+void GLCanvas::zoom3D(float factor) {
+    cameraDistance_ = std::clamp(cameraDistance_ * factor, 1.0f, 50.0f);
+    updateCamera();
+    update();
+}
+
 void GLCanvas::updateCamera() {
     float yawRad = static_cast<float>(cameraYaw_ * M_PI / 180.0);
     float pitchRad = static_cast<float>(cameraPitch_ * M_PI / 180.0);

@@ -42,6 +42,7 @@ public:
     void set3DPanMode(bool pan);
     bool is3DPanMode() const { return is3DPanMode_; }
     QVector3D getCameraTarget() const { return cameraTarget_; }
+    void zoom3D(float factor);
 
 signals:
     void viewChanged(QPointF offset, double scale);

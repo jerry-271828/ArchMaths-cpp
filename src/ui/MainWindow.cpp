@@ -163,14 +163,22 @@ void MainWindow::setupToolBar() {
 
     QAction* zoomInAction = toolbar->addAction("放大");
     connect(zoomInAction, &QAction::triggered, this, [this]() {
-        canvas_->setScale(canvas_->getScale() * 1.2);
-        recalculateAll();
+        if (canvas_->is3DMode()) {
+            canvas_->zoom3D(0.8f);
+        } else {
+            canvas_->setScale(canvas_->getScale() * 1.2);
+            recalculateAll();
+        }
     });
 
     QAction* zoomOutAction = toolbar->addAction("缩小");
     connect(zoomOutAction, &QAction::triggered, this, [this]() {
-        canvas_->setScale(canvas_->getScale() / 1.2);
-        recalculateAll();
+        if (canvas_->is3DMode()) {
+            canvas_->zoom3D(1.25f);
+        } else {
+            canvas_->setScale(canvas_->getScale() / 1.2);
+            recalculateAll();
+        }
     });
 
     toolbar->addSeparator();
