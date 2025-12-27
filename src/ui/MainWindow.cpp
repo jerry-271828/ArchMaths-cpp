@@ -1254,7 +1254,7 @@ void MainWindow::generateImplicit3DMesh(PlotEntry& entry, const std::vector<doub
                         int e1 = mcTriTable[cubeIndex][t + 1];
                         int e2 = mcTriTable[cubeIndex][t + 2];
 
-                        // Calculate normal
+                        // Get vertices directly (no coordinate swap)
                         float ax = static_cast<float>(vertList[e0][0]);
                         float ay = static_cast<float>(vertList[e0][1]);
                         float az = static_cast<float>(vertList[e0][2]);
@@ -1265,6 +1265,7 @@ void MainWindow::generateImplicit3DMesh(PlotEntry& entry, const std::vector<doub
                         float cy = static_cast<float>(vertList[e2][1]);
                         float cz = static_cast<float>(vertList[e2][2]);
 
+                        // Calculate normal
                         float ux = bx - ax, uy = by - ay, uz = bz - az;
                         float vx = cx - ax, vy = cy - ay, vz = cz - az;
                         float nx = uy * vz - uz * vy;

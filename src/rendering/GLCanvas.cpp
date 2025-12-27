@@ -202,7 +202,7 @@ varying vec3 vNormal;
 varying vec3 vPos;
 void main() {
     vPos = vec3(model * vec4(aPos, 1.0));
-    vNormal = mat3(model) * aNormal;
+    vNormal = vec3(dot(model[0].xyz, aNormal), dot(model[1].xyz, aNormal), dot(model[2].xyz, aNormal));
     gl_Position = mvp * vec4(aPos, 1.0);
 }
 )";
