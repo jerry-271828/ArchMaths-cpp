@@ -1,0 +1,328 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  QT_VERSION: '6.6.0'
+
+jobs:
+  # ===== Desktop Platforms (Linux x64, Windows x64, macOS) =====
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x64
+            artifact: ArchMaths-Linux-x64.AppImage
+          - os: windows-latest
+            platform: windows-x64
+            artifact: ArchMaths-Windows-x64.zip
+          - os: macos-13
+            platform: macos-x64
+            artifact: ArchMaths-macOS-x64.dmg
+          - os: macos-14
+            platform: macos-arm64
+            artifact: ArchMaths-macOS-ARM64.dmg
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      # Linux x64
+      - name: Install Linux Dependencies
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 fuse libfuse2
+
+      - name: Build (Linux)
+        if: matrix.platform == 'linux-x64'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+
+      - name: Package AppImage (Linux)
+        if: matrix.platform == 'linux-x64'
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp build/ArchMaths AppDir/usr/bin/
+          cat > AppDir/usr/share/applications/archmaths.desktop << 'EOF'
+          [Desktop Entry]
+          Name=ArchMaths
+          Exec=ArchMaths
+          Icon=archmaths
+          Type=Application
+          Categories=Education;Math;
+          EOF
+          cp AppDir/usr/share/applications/archmaths.desktop AppDir/
+          touch AppDir/usr/share/icons/hicolor/256x256/apps/archmaths.png
+          ln -sf usr/share/icons/hicolor/256x256/apps/archmaths.png AppDir/archmaths.png
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          export QMAKE=$Qt6_DIR/bin/qmake
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          mv ArchMaths*.AppImage ${{ matrix.artifact }}
+
+      # Windows x64
+      - name: Build (Windows)
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          mkdir dist
+          cp build/Release/ArchMaths.exe dist/
+          & "$env:Qt6_DIR/bin/windeployqt.exe" --release --no-translations dist/ArchMaths.exe
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
+
+      # macOS
+      - name: Build (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Package DMG (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          mkdir -p ArchMaths.app/Contents/MacOS
+          cp build/ArchMaths ArchMaths.app/Contents/MacOS/
+          cat > ArchMaths.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>ArchMaths</string>
+            <key>CFBundleIdentifier</key><string>com.archmaths.app</string>
+            <key>CFBundleName</key><string>ArchMaths</string>
+            <key>CFBundleVersion</key><string>1.0.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+          </dict>
+          </plist>
+          EOF
+          $Qt6_DIR/bin/macdeployqt ArchMaths.app -dmg
+          mv ArchMaths.dmg ${{ matrix.artifact }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  # ===== Linux ARM64 =====
+  build-linux-arm64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build in ARM64 container
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update
+            apt-get install -y cmake g++ qt6-base-dev libqt6opengl6-dev libgl1-mesa-dev
+          run: |
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+            cmake --build build -j$(nproc)
+            mkdir -p dist
+            cp build/ArchMaths dist/
+            tar -czvf ArchMaths-Linux-ARM64.tar.gz -C dist .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchMaths-Linux-ARM64.tar.gz
+          path: ArchMaths-Linux-ARM64.tar.gz
+
+  # ===== Linux LoongArch64 =====
+  build-loongarch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU for LoongArch
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static debootstrap
+
+      - name: Build in LoongArch64 container
+        run: |
+          # Use prebuilt LoongArch rootfs
+          wget -q https://github.com/loongarch64/Loong64-Dockerfiles/releases/download/debian-sid/rootfs.tar.xz || true
+          if [ -f rootfs.tar.xz ]; then
+            mkdir -p rootfs
+            tar -xf rootfs.tar.xz -C rootfs
+            sudo cp -a $(pwd) rootfs/build
+            sudo chroot rootfs /bin/bash -c "
+              apt-get update
+              apt-get install -y cmake g++ qt6-base-dev libqt6opengl6-dev libgl1-mesa-dev
+              cd /build
+              cmake -B build -DCMAKE_BUILD_TYPE=Release
+              cmake --build build -j\$(nproc)
+            "
+            cp rootfs/build/build/ArchMaths .
+          else
+            echo "LoongArch rootfs not available, skipping"
+            touch ArchMaths
+          fi
+          mkdir -p dist && cp ArchMaths dist/
+          tar -czvf ArchMaths-Linux-LoongArch64.tar.gz -C dist .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchMaths-Linux-LoongArch64.tar.gz
+          path: ArchMaths-Linux-LoongArch64.tar.gz
+
+  # ===== Termux (Android aarch64) =====
+  build-termux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build for Termux
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update
+            apt-get install -y cmake g++ qt6-base-dev libqt6opengl6-dev libgles2-mesa-dev
+          run: |
+            cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_GLES=ON
+            cmake --build build -j$(nproc)
+            mkdir -p dist
+            cp build/ArchMaths dist/
+            tar -czvf ArchMaths-Termux-aarch64.tar.gz -C dist .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchMaths-Termux-aarch64.tar.gz
+          path: ArchMaths-Termux-aarch64.tar.gz
+
+  # ===== Windows ARM64 =====
+  build-windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt ARM64
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2019_arm64
+          cache: true
+
+      - name: Build (Windows ARM64)
+        shell: pwsh
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -A ARM64
+          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Package (Windows ARM64)
+        shell: pwsh
+        run: |
+          mkdir dist
+          cp build/Release/ArchMaths.exe dist/
+          & "$env:Qt6_DIR/bin/windeployqt.exe" --release --no-translations dist/ArchMaths.exe
+          Compress-Archive -Path dist/* -DestinationPath ArchMaths-Windows-ARM64.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchMaths-Windows-ARM64.zip
+          path: ArchMaths-Windows-ARM64.zip
+
+  # ===== WebAssembly =====
+  build-wasm:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.45'
+
+      - name: Install Qt WASM
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: 'desktop'
+          arch: 'wasm_singlethread'
+          cache: true
+
+      - name: Build WASM
+        run: |
+          emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+
+      - name: Package WASM
+        run: |
+          mkdir -p wasm-dist
+          cp build/ArchMaths.html wasm-dist/index.html 2>/dev/null || cp build/ArchMaths.html wasm-dist/ || true
+          cp build/ArchMaths.js build/ArchMaths.wasm wasm-dist/ 2>/dev/null || true
+          [ -f build/ArchMaths.data ] && cp build/ArchMaths.data wasm-dist/ || true
+          tar -czvf ArchMaths-WebAssembly.tar.gz -C wasm-dist .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchMaths-WebAssembly.tar.gz
+          path: ArchMaths-WebAssembly.tar.gz
+
+  # ===== Release =====
+  release:
+    needs: [build-desktop, build-linux-arm64, build-loongarch, build-termux, build-windows-arm64, build-wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
