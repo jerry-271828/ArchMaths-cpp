@@ -118,7 +118,7 @@ jobs:
           </dict>
           </plist>
           EOF
-          $Qt6_DIR/bin/macdeployqt ArchMaths.app -dmg
+          $QT_ROOT_DIR/bin/macdeployqt ArchMaths.app -dmg
           mv ArchMaths.dmg ${{ matrix.artifact }}
 
       - name: Upload Artifact
