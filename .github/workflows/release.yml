@@ -50,7 +50,7 @@ jobs:
       - name: Build (Linux)
         if: matrix.platform == 'linux-x64'
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$Qt6_DIR
           cmake --build build -j$(nproc)
 
       - name: Package AppImage (Linux)
