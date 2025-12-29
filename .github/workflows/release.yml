@@ -169,28 +169,24 @@ jobs:
 
           # Install QEMU and debootstrap
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support debootstrap debian-archive-keyring
+          sudo apt-get install -y qemu-user-static binfmt-support debootstrap wget gnupg
+
+          # Download and install Debian ports archive keyring
+          wget -q https://ftp.ports.debian.org/debian-ports/pool/main/d/debian-ports-archive-keyring/debian-ports-archive-keyring_2025.01.06_all.deb
+          sudo dpkg -i debian-ports-archive-keyring_2025.01.06_all.deb || sudo apt-get install -f -y
 
           # Verify QEMU loongarch64 is available
-          ls -la /usr/bin/qemu-loongarch64-static || {
-            echo "::error::QEMU loongarch64-static not found in Ubuntu 24.04"
-            exit 1
-          }
+          ls -la /usr/bin/qemu-loongarch64-static
 
           # Create Debian loong64 rootfs (first stage - just download packages)
           sudo mkdir -p /opt/loongarch64
           sudo debootstrap --arch=loong64 --foreign --variant=minbase \
-            sid /opt/loongarch64 http://ftp.ports.debian.org/debian-ports/ || true
+            --keyring=/usr/share/keyrings/debian-ports-archive-keyring.gpg \
+            sid /opt/loongarch64 http://ftp.ports.debian.org/debian-ports/
 
           # Copy QEMU into rootfs BEFORE second stage
           sudo mkdir -p /opt/loongarch64/usr/bin
           sudo cp /usr/bin/qemu-loongarch64-static /opt/loongarch64/usr/bin/
-
-          # Copy debootstrap script into chroot (fix for missing /debootstrap/debootstrap)
-          sudo mkdir -p /opt/loongarch64/debootstrap
-          sudo cp /usr/share/debootstrap/debootstrap /opt/loongarch64/debootstrap/
-          sudo cp -r /usr/share/debootstrap/functions /opt/loongarch64/debootstrap/
-          sudo cp -r /usr/share/debootstrap/scripts /opt/loongarch64/debootstrap/
 
           # Run second stage to actually install the base system
           sudo chroot /opt/loongarch64 /debootstrap/debootstrap --second-stage
