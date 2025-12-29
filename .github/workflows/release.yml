@@ -21,10 +21,7 @@ jobs:
           - os: windows-latest
             platform: windows-x64
             artifact: ArchMaths-Windows-x64.zip
-          - os: macos-13
-            platform: macos-x64
-            artifact: ArchMaths-macOS-x64.dmg
-          - os: macos-14
+          - os: macos-15
             platform: macos-arm64
             artifact: ArchMaths-macOS-ARM64.dmg
 
