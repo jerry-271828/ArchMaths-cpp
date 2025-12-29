@@ -341,18 +341,20 @@ jobs:
   # ===== WebAssembly =====
   build-wasm:
     runs-on: ubuntu-22.04
+    env:
+      QT_WASM_VERSION: '6.5.3'  # LTS version with better WASM support
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: '3.1.37'
+          version: '3.1.25'  # Matches Qt 6.5.3 WASM
 
       - name: Install Qt Host (for moc/rcc/uic tools)
         uses: jurplel/install-qt-action@v4
         with:
-          version: ${{ env.QT_VERSION }}
+          version: ${{ env.QT_WASM_VERSION }}
           target: 'desktop'
           cache: true
           set-env: true
@@ -361,18 +363,25 @@ jobs:
       - name: Install Qt WASM
         uses: jurplel/install-qt-action@v4
         with:
-          version: ${{ env.QT_VERSION }}
+          version: ${{ env.QT_WASM_VERSION }}
           target: 'desktop'
           arch: 'wasm_singlethread'
-          modules: 'qtshadertools'
-          cache: true
+          cache: false
           set-env: true
           dir: '${{ runner.temp }}/qt-wasm'
 
+      - name: Debug Qt WASM installation
+        run: |
+          echo "=== Qt WASM directory structure ==="
+          ls -la ${{ runner.temp }}/qt-wasm/Qt/${{ env.QT_WASM_VERSION }}/wasm_singlethread/ || true
+          ls -la ${{ runner.temp }}/qt-wasm/Qt/${{ env.QT_WASM_VERSION }}/wasm_singlethread/lib/cmake/ || true
+          echo "=== Looking for Qt6Gui ==="
+          find ${{ runner.temp }}/qt-wasm -name "*Gui*" -type d 2>/dev/null || true
+
       - name: Build WASM
         run: |
-          QT_HOST_PATH="${{ runner.temp }}/qt-host/Qt/${{ env.QT_VERSION }}/gcc_64"
-          QT_WASM_PATH="${{ runner.temp }}/qt-wasm/Qt/${{ env.QT_VERSION }}/wasm_singlethread"
+          QT_HOST_PATH="${{ runner.temp }}/qt-host/Qt/${{ env.QT_WASM_VERSION }}/gcc_64"
+          QT_WASM_PATH="${{ runner.temp }}/qt-wasm/Qt/${{ env.QT_WASM_VERSION }}/wasm_singlethread"
           emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_WASM_PATH" \
             -DQT_HOST_PATH="$QT_HOST_PATH"
