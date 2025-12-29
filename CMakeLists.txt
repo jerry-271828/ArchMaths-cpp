@@ -82,19 +82,19 @@ endif()
 endif()  # Close the outer if(USE_GLES)/elseif(NOT EMSCRIPTEN) block
 
 # Qt查找 - 优先使用Qt6，回退到Qt5
-# NEVER mode is required for Emscripten to find Qt6 in CMAKE_PREFIX_PATH
-# (Emscripten toolchain sets ONLY mode which prevents finding Qt6)
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
-
 if(EMSCRIPTEN)
     # For WASM, Qt6 is required (no Qt5 fallback available)
+    # Don't override CMAKE_FIND_ROOT_PATH_MODE - let Emscripten handle it
+    # so that dependencies like EGL are found in the Emscripten sysroot
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGLWidgets)
     message(STATUS "Using Qt6 for WebAssembly")
     set(QT_VERSION 6)
     set(QT_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGLWidgets)
 else()
+    # For native builds, use NEVER mode to find Qt in CMAKE_PREFIX_PATH
+    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
     find_package(Qt6 QUIET COMPONENTS Core Gui Widgets OpenGLWidgets)
     if(Qt6_FOUND)
         message(STATUS "Using Qt6")
