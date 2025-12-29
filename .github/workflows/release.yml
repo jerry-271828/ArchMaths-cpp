@@ -316,11 +316,20 @@ jobs:
       - name: Package (Windows ARM64)
         shell: pwsh
         run: |
-          $QT_HOST_PATH = "${{ runner.temp }}/qt-host/Qt/${{ env.QT_VERSION }}/msvc2019_64"
           $QT_ARM64_PATH = "${{ runner.temp }}/qt-arm64/Qt/${{ env.QT_VERSION }}/msvc2019_arm64"
           mkdir dist
           cp build/Release/ArchMaths.exe dist/
-          & "$QT_HOST_PATH/bin/windeployqt.exe" --release --no-translations --qtpaths "$QT_ARM64_PATH/bin/qtpaths.exe" dist/ArchMaths.exe
+          # Manually copy ARM64 Qt DLLs (windeployqt doesn't work for cross-compilation without qtpaths)
+          cp "$QT_ARM64_PATH/bin/Qt6Core.dll" dist/
+          cp "$QT_ARM64_PATH/bin/Qt6Gui.dll" dist/
+          cp "$QT_ARM64_PATH/bin/Qt6Widgets.dll" dist/
+          cp "$QT_ARM64_PATH/bin/Qt6OpenGL.dll" dist/
+          cp "$QT_ARM64_PATH/bin/Qt6OpenGLWidgets.dll" dist/
+          # Copy plugins
+          mkdir -p dist/platforms
+          cp "$QT_ARM64_PATH/plugins/platforms/qwindows.dll" dist/platforms/
+          mkdir -p dist/styles
+          cp "$QT_ARM64_PATH/plugins/styles/qwindowsvistastyle.dll" dist/styles/ -ErrorAction SilentlyContinue
           Compress-Archive -Path dist/* -DestinationPath ArchMaths-Windows-ARM64.zip
 
       - name: Upload Artifact
