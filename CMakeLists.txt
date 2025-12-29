@@ -83,9 +83,9 @@ endif()  # Close the outer if(USE_GLES)/elseif(NOT EMSCRIPTEN) block
 
 # Qt查找 - 优先使用Qt6，回退到Qt5
 if(EMSCRIPTEN)
-    # For WASM, Qt6 is required (no Qt5 fallback available)
-    # Don't override CMAKE_FIND_ROOT_PATH_MODE - let Emscripten handle it
-    # so that dependencies like EGL are found in the Emscripten sysroot
+    # For WASM, add Qt path to CMAKE_FIND_ROOT_PATH so it can be found
+    # while still using Emscripten's path resolution for dependencies like EGL
+    list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_PREFIX_PATH})
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGLWidgets)
     message(STATUS "Using Qt6 for WebAssembly")
     set(QT_VERSION 6)
