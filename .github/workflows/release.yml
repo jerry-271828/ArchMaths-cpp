@@ -90,7 +90,7 @@ jobs:
         run: |
           mkdir dist
           cp build/Release/ArchMaths.exe dist/
-          & "$env:Qt6_DIR/bin/windeployqt.exe" --release --no-translations dist/ArchMaths.exe
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations dist/ArchMaths.exe
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
 
       # macOS
