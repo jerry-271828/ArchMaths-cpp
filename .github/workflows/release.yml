@@ -289,25 +289,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Qt Host (for windeployqt)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2019_64
+          cache: true
+          set-env: true
+          dir: '${{ runner.temp }}/qt-host'
+
       - name: Install Qt ARM64
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2019_arm64
           cache: true
+          set-env: true
+          dir: '${{ runner.temp }}/qt-arm64'
 
       - name: Build (Windows ARM64)
         shell: pwsh
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -A ARM64
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -A ARM64 -DCMAKE_PREFIX_PATH="${{ runner.temp }}/qt-arm64/Qt/${{ env.QT_VERSION }}/msvc2019_arm64"
           cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
 
       - name: Package (Windows ARM64)
         shell: pwsh
         run: |
+          $QT_HOST_PATH = "${{ runner.temp }}/qt-host/Qt/${{ env.QT_VERSION }}/msvc2019_64"
+          $QT_ARM64_PATH = "${{ runner.temp }}/qt-arm64/Qt/${{ env.QT_VERSION }}/msvc2019_arm64"
           mkdir dist
           cp build/Release/ArchMaths.exe dist/
-          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations dist/ArchMaths.exe
+          & "$QT_HOST_PATH/bin/windeployqt.exe" --release --no-translations --qtpaths "$QT_ARM64_PATH/bin/qtpaths.exe" dist/ArchMaths.exe
           Compress-Archive -Path dist/* -DestinationPath ArchMaths-Windows-ARM64.zip
 
       - name: Upload Artifact
