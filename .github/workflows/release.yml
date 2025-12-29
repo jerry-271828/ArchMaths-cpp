@@ -157,138 +157,79 @@ jobs:
           name: ArchMaths-Linux-ARM64.tar.gz
           path: ArchMaths-Linux-ARM64.tar.gz
 
-  # ===== Linux LoongArch64 (Cross-compilation) =====
+  # ===== Linux LoongArch64 =====
   build-loongarch:
     runs-on: ubuntu-24.04
-    continue-on-error: true  # LoongArch64 build is experimental
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build for LoongArch64 using cross-compilation
+      - name: Build for LoongArch64
         run: |
-          set -e
+          set -ex
 
-          # Install cross-compilation toolchain and dependencies
+          # Install QEMU and debootstrap
           sudo apt-get update
-          sudo apt-get install -y wget xz-utils cmake ninja-build pkg-config \
-            qemu-user-static binfmt-support debootstrap
+          sudo apt-get install -y qemu-user-static binfmt-support debootstrap debian-archive-keyring
 
-          # Download LoongArch64 cross-compilation toolchain
-          echo "Downloading LoongArch64 cross-toolchain..."
-          wget -q https://github.com/sunhaiyong1978/CLFS-for-LoongArch/releases/download/8.1/CLFS-loongarch64-8.1-x86_64-cross-tools-gcc-glibc.tar.xz -O cross-tools.tar.xz
-          sudo mkdir -p /opt/cross-tools
-          sudo tar -xf cross-tools.tar.xz -C /opt/cross-tools --strip-components=1
+          # Verify QEMU loongarch64 is available
+          ls -la /usr/bin/qemu-loongarch64-static || {
+            echo "::error::QEMU loongarch64-static not found in Ubuntu 24.04"
+            exit 1
+          }
 
-          # Download LoongArch64 sysroot with Qt6
-          echo "Setting up Debian LoongArch64 sysroot..."
-          sudo mkdir -p /opt/loongarch64-sysroot
-
-          # Use debootstrap to create a minimal Debian sid loong64 sysroot
+          # Create Debian loong64 rootfs (first stage - just download packages)
+          sudo mkdir -p /opt/loongarch64
           sudo debootstrap --arch=loong64 --foreign --variant=minbase \
-            --include=libqt6core6t64,libqt6gui6t64,libqt6widgets6t64,libqt6opengl6t64,libqt6openglwidgets6t64,qt6-base-dev,libgl-dev,libegl-dev \
-            sid /opt/loongarch64-sysroot http://ftp.ports.debian.org/debian-ports/ || true
+            sid /opt/loongarch64 http://ftp.ports.debian.org/debian-ports/ || true
 
-          # Setup cross-compilation environment
-          export CROSS_ROOT=/opt/cross-tools
-          export SYSROOT=/opt/loongarch64-sysroot
-          export PATH=$CROSS_ROOT/bin:$PATH
-          export CROSS_COMPILE=loongarch64-unknown-linux-gnu-
+          # Copy QEMU into rootfs BEFORE second stage
+          sudo mkdir -p /opt/loongarch64/usr/bin
+          sudo cp /usr/bin/qemu-loongarch64-static /opt/loongarch64/usr/bin/
 
-          # Create CMake toolchain file for LoongArch64
-          cat > loongarch64-toolchain.cmake << 'TOOLCHAIN_EOF'
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR loongarch64)
+          # Run second stage to actually install the base system
+          sudo chroot /opt/loongarch64 /debootstrap/debootstrap --second-stage
 
-          set(CROSS_ROOT /opt/cross-tools)
-          set(SYSROOT /opt/loongarch64-sysroot)
+          # Configure apt sources for loong64
+          sudo tee /opt/loongarch64/etc/apt/sources.list << 'SOURCES'
+          deb http://ftp.ports.debian.org/debian-ports sid main
+          deb http://ftp.ports.debian.org/debian-ports unreleased main
+          SOURCES
 
-          set(CMAKE_C_COMPILER ${CROSS_ROOT}/bin/loongarch64-unknown-linux-gnu-gcc)
-          set(CMAKE_CXX_COMPILER ${CROSS_ROOT}/bin/loongarch64-unknown-linux-gnu-g++)
-          set(CMAKE_SYSROOT ${SYSROOT})
+          # Mount necessary filesystems
+          sudo mount -t proc proc /opt/loongarch64/proc
+          sudo mount -t sysfs sys /opt/loongarch64/sys
+          sudo mount -t devtmpfs dev /opt/loongarch64/dev
+          sudo mount -t devpts devpts /opt/loongarch64/dev/pts
 
-          set(CMAKE_FIND_ROOT_PATH ${SYSROOT})
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+          # Install build dependencies inside chroot
+          sudo chroot /opt/loongarch64 /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake g++ make pkg-config \
+              qt6-base-dev qt6-base-dev-tools libqt6opengl6-dev libqt6openglwidgets6 \
+              libgl1-mesa-dev libegl1-mesa-dev
+          "
 
-          set(CMAKE_C_FLAGS_INIT "-march=loongarch64 -mabi=lp64d")
-          set(CMAKE_CXX_FLAGS_INIT "-march=loongarch64 -mabi=lp64d")
-          TOOLCHAIN_EOF
+          # Copy source code into chroot
+          sudo mkdir -p /opt/loongarch64/build
+          sudo cp -r . /opt/loongarch64/build/
 
-          # Try cross-compilation first
-          if [ -f "$CROSS_ROOT/bin/loongarch64-unknown-linux-gnu-gcc" ]; then
-            echo "Cross-compiler found, attempting cross-compilation..."
+          # Build inside chroot
+          sudo chroot /opt/loongarch64 /bin/bash -c "
+            cd /build
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+            cmake --build build -j\$(nproc)
+          "
 
-            # Check if Qt6 is available in sysroot
-            if [ -d "$SYSROOT/usr/lib/loongarch64-linux-gnu/cmake/Qt6" ]; then
-              cmake -B build -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_TOOLCHAIN_FILE=loongarch64-toolchain.cmake \
-                -DCMAKE_PREFIX_PATH=$SYSROOT/usr/lib/loongarch64-linux-gnu/cmake
-              cmake --build build -j$(nproc)
-              mkdir -p dist
-              cp build/ArchMaths dist/
-              echo "Cross-compilation successful!"
-            else
-              echo "Qt6 not found in sysroot, falling back to QEMU chroot build..."
-              # Fall back to QEMU-based build
-              sudo cp /usr/bin/qemu-loongarch64-static $SYSROOT/usr/bin/ 2>/dev/null || true
+          # Extract the binary
+          mkdir -p dist
+          sudo cp /opt/loongarch64/build/build/ArchMaths dist/
+          file dist/ArchMaths
 
-              # Complete debootstrap second stage
-              if [ -f "$SYSROOT/debootstrap/debootstrap" ]; then
-                sudo chroot $SYSROOT /debootstrap/debootstrap --second-stage || true
-              fi
-
-              # Copy source and build
-              sudo mkdir -p $SYSROOT/build
-              sudo cp -r . $SYSROOT/build/
-
-              sudo chroot $SYSROOT /bin/bash -c "
-                apt-get update || true
-                apt-get install -y --no-install-recommends cmake g++ qt6-base-dev libqt6opengl6-dev libgl1-mesa-dev || true
-                cd /build
-                cmake -B build -DCMAKE_BUILD_TYPE=Release || exit 1
-                cmake --build build -j\$(nproc) || exit 1
-              " && {
-                mkdir -p dist
-                sudo cp $SYSROOT/build/build/ArchMaths dist/
-                echo "QEMU chroot build successful!"
-              }
-            fi
-          else
-            echo "Cross-compiler not found, using QEMU chroot build..."
-            # QEMU-based native compilation in chroot
-            sudo cp /usr/bin/qemu-loongarch64-static $SYSROOT/usr/bin/ 2>/dev/null || {
-              echo "::error::QEMU loongarch64 not available"
-              mkdir -p dist
-              echo "LoongArch64 build requires native hardware or proper QEMU setup" > dist/README.txt
-              tar -czvf ArchMaths-Linux-LoongArch64.tar.gz -C dist .
-              exit 0
-            }
-          fi
-
-          # Verify we have a real binary
-          if [ -f "dist/ArchMaths" ] && [ $(stat -c%s "dist/ArchMaths") -gt 1000 ]; then
-            file dist/ArchMaths || true
-            tar -czvf ArchMaths-Linux-LoongArch64.tar.gz -C dist .
-            echo "Build completed successfully!"
-          else
-            echo "::warning::Build produced no valid binary, creating source package for native compilation"
-            mkdir -p dist/src
-            cp -r src include CMakeLists.txt dist/src/
-            cat > dist/README.txt << 'EOF'
-          ArchMaths for LoongArch64
-          =========================
-          This package contains source code for native compilation on LoongArch64.
-
-          To build:
-            1. Install dependencies: apt install cmake g++ qt6-base-dev libqt6opengl6-dev libgl1-mesa-dev
-            2. cd src && cmake -B build -DCMAKE_BUILD_TYPE=Release
-            3. cmake --build build -j$(nproc)
-            4. The binary will be at build/ArchMaths
-          EOF
-            tar -czvf ArchMaths-Linux-LoongArch64.tar.gz -C dist .
-          fi
+          # Package
+          tar -czvf ArchMaths-Linux-LoongArch64.tar.gz -C dist .
+          echo "LoongArch64 build successful!"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
