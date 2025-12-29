@@ -347,7 +347,7 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: '3.1.45'
+          version: '3.1.37'
 
       - name: Install Qt Host (for moc/rcc/uic tools)
         uses: jurplel/install-qt-action@v4
