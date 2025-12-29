@@ -82,11 +82,11 @@ endif()
 endif()  # Close the outer if(USE_GLES)/elseif(NOT EMSCRIPTEN) block
 
 # Qt查找 - 优先使用Qt6，回退到Qt5
-if(NOT EMSCRIPTEN)
-    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
-    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
-    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
-endif()
+# NEVER mode is required for Emscripten to find Qt6 in CMAKE_PREFIX_PATH
+# (Emscripten toolchain sets ONLY mode which prevents finding Qt6)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
 find_package(Qt6 QUIET COMPONENTS Core Gui Widgets OpenGLWidgets)
 if(Qt6_FOUND)
     message(STATUS "Using Qt6")
