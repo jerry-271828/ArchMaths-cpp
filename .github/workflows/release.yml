@@ -364,6 +364,7 @@ jobs:
           version: ${{ env.QT_VERSION }}
           target: 'desktop'
           arch: 'wasm_singlethread'
+          modules: 'qtshadertools'
           cache: true
           set-env: true
           dir: '${{ runner.temp }}/qt-wasm'
