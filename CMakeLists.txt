@@ -24,7 +24,22 @@ if(EMSCRIPTEN)
     set(GL_LIBRARIES "")
 endif()
 
-# 查找OpenGL ES库 (多个可能的位置)
+# Allow forcing OpenGL ES from command line
+if(USE_GLES AND NOT EMSCRIPTEN)
+    message(STATUS "OpenGL ES forced via USE_GLES flag")
+    find_library(GLES2_LIBRARY NAMES GLESv2 libGLESv2)
+    find_library(EGL_LIBRARY NAMES EGL libEGL)
+    if(GLES2_LIBRARY AND EGL_LIBRARY)
+        message(STATUS "Found OpenGL ES: ${GLES2_LIBRARY}")
+        message(STATUS "Found EGL: ${EGL_LIBRARY}")
+        set(GL_LIBRARIES ${GLES2_LIBRARY} ${EGL_LIBRARY})
+        add_definitions(-DUSE_GLES)
+    else()
+        message(STATUS "OpenGL ES libraries not found, using stub")
+        set(GL_LIBRARIES "")
+        add_definitions(-DUSE_GLES)
+    endif()
+elseif(NOT EMSCRIPTEN)
 find_library(GLES2_LIBRARY
     NAMES GLESv2 libGLESv2
     PATHS
@@ -64,6 +79,7 @@ else()
     set(GL_LIBRARIES OpenGL::GL)
     set(USE_GLES FALSE)
 endif()
+endif()  # Close the outer if(USE_GLES)/elseif(NOT EMSCRIPTEN) block
 
 # Qt查找 - 优先使用Qt6，回退到Qt5
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
