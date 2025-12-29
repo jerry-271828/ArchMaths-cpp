@@ -186,6 +186,12 @@ jobs:
           sudo mkdir -p /opt/loongarch64/usr/bin
           sudo cp /usr/bin/qemu-loongarch64-static /opt/loongarch64/usr/bin/
 
+          # Copy debootstrap script into chroot (fix for missing /debootstrap/debootstrap)
+          sudo mkdir -p /opt/loongarch64/debootstrap
+          sudo cp /usr/share/debootstrap/debootstrap /opt/loongarch64/debootstrap/
+          sudo cp -r /usr/share/debootstrap/functions /opt/loongarch64/debootstrap/
+          sudo cp -r /usr/share/debootstrap/scripts /opt/loongarch64/debootstrap/
+
           # Run second stage to actually install the base system
           sudo chroot /opt/loongarch64 /debootstrap/debootstrap --second-stage
 
