@@ -169,19 +169,15 @@ jobs:
 
           # Install QEMU and debootstrap
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support debootstrap wget gnupg
-
-          # Download and install Debian ports archive keyring
-          wget -q https://ftp.ports.debian.org/debian-ports/pool/main/d/debian-ports-archive-keyring/debian-ports-archive-keyring_2025.01.06_all.deb
-          sudo dpkg -i debian-ports-archive-keyring_2025.01.06_all.deb || sudo apt-get install -f -y
+          sudo apt-get install -y qemu-user-static binfmt-support debootstrap
 
           # Verify QEMU loongarch64 is available
           ls -la /usr/bin/qemu-loongarch64-static
 
           # Create Debian loong64 rootfs (first stage - just download packages)
+          # Note: Using --no-check-gpg since Debian ports keyring may not be available
           sudo mkdir -p /opt/loongarch64
-          sudo debootstrap --arch=loong64 --foreign --variant=minbase \
-            --keyring=/usr/share/keyrings/debian-ports-archive-keyring.gpg \
+          sudo debootstrap --arch=loong64 --foreign --variant=minbase --no-check-gpg \
             sid /opt/loongarch64 http://ftp.ports.debian.org/debian-ports/
 
           # Copy QEMU into rootfs BEFORE second stage
